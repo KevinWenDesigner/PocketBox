@@ -1,8 +1,9 @@
 import Foundation
 
 enum EPGParser {
-    /// Parses either XMLTV XML or DIYP/TVBox JSON EPG payloads into a dictionary keyed by lowercase channel id/name.
-    static func parse(data: Data, fallbackChannelName: String? = nil) -> [String: [EPGProgram]] {
+    /// Parses either XMLTV XML (including `.xml.gz`) or DIYP/TVBox JSON EPG payloads into a dictionary keyed by lowercase channel id/name.
+    static func parse(data rawData: Data, fallbackChannelName: String? = nil) -> [String: [EPGProgram]] {
+        let data = GzipDecoder.decompressIfNeeded(rawData)
         if let text = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
            text.hasPrefix("{") || text.hasPrefix("[") {
             return parseDIYPJSON(data: data, fallbackChannelName: fallbackChannelName)

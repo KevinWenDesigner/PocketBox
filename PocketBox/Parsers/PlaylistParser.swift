@@ -6,7 +6,11 @@ struct PlaylistParseResult {
 }
 
 enum PlaylistParser {
-    static func parse(_ content: String, defaultGroup: String = "默认分组") -> PlaylistParseResult {
+    static func parse(
+        _ content: String,
+        defaultGroup: String = "默认分组",
+        defaultHeaders: [String: String] = [:]
+    ) -> PlaylistParseResult {
         let normalized = content
             .replacingOccurrences(of: "\u{FEFF}", with: "")
             .replacingOccurrences(of: "\r\n", with: "\n")
@@ -18,15 +22,19 @@ enum PlaylistParser {
         }
 
         if normalized.contains("#EXTM3U") || normalized.contains("#EXTINF") {
-            return parseM3U(normalized, defaultGroup: defaultGroup)
+            return parseM3U(normalized, defaultGroup: defaultGroup, defaultHeaders: defaultHeaders)
         } else {
-            return parseTXT(normalized, defaultGroup: defaultGroup)
+            return parseTXT(normalized, defaultGroup: defaultGroup, defaultHeaders: defaultHeaders)
         }
     }
 
     // MARK: - M3U / M3U8 Playlist
 
-    private static func parseM3U(_ text: String, defaultGroup: String) -> PlaylistParseResult {
+    private static func parseM3U(
+        _ text: String,
+        defaultGroup: String,
+        defaultHeaders: [String: String]
+    ) -> PlaylistParseResult {
         var epgURL: String?
         var orderedKeys: [String] = []
         var channelMap: [String: LiveChannel] = [:]
@@ -36,7 +44,7 @@ enum PlaylistParser {
         var pendingLogo: String?
         var pendingTvgID: String?
         var pendingTvgName: String?
-        var pendingHeaders: [String: String] = [:]
+        var pendingHeaders: [String: String] = defaultHeaders
 
         let lines = text.components(separatedBy: "\n")
         for rawLine in lines {
@@ -132,7 +140,7 @@ enum PlaylistParser {
             pendingLogo = nil
             pendingTvgID = nil
             pendingTvgName = nil
-            pendingHeaders = [:]
+            pendingHeaders = defaultHeaders
         }
 
         let channels = orderedKeys.compactMap { channelMap[$0] }
@@ -141,7 +149,11 @@ enum PlaylistParser {
 
     // MARK: - TVBox / DIYP TXT (#genre#)
 
-    private static func parseTXT(_ text: String, defaultGroup: String) -> PlaylistParseResult {
+    private static func parseTXT(
+        _ text: String,
+        defaultGroup: String,
+        defaultHeaders: [String: String]
+    ) -> PlaylistParseResult {
         var currentGroup = defaultGroup
         var orderedKeys: [String] = []
         var channelMap: [String: LiveChannel] = [:]
@@ -166,7 +178,7 @@ enum PlaylistParser {
             let urlPart = String(line[line.index(after: commaIndex)...]).trimmingCharacters(in: .whitespacesAndNewlines)
             guard !name.isEmpty, !urlPart.isEmpty else { continue }
 
-            let endpoints = parseEndpoints(rawURLList: urlPart, inheritedHeaders: [:])
+            let endpoints = parseEndpoints(rawURLList: urlPart, inheritedHeaders: defaultHeaders)
             guard !endpoints.isEmpty else { continue }
 
             let key = "\(currentGroup)::\(name)"

@@ -104,10 +104,16 @@ final class AppStore: ObservableObject {
     }
 
     func programs(for channel: LiveChannel) -> [EPGProgram] {
-        let keys = [channel.tvgID, channel.tvgName, channel.name]
+        let rawKeys = [channel.tvgID, channel.tvgName, channel.name]
             .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
             .filter { !$0.isEmpty }
-        for k in keys {
+        var candidates: [String] = []
+        for k in rawKeys {
+            candidates.append(k)
+            let compact = k.replacingOccurrences(of: "-", with: "").replacingOccurrences(of: " ", with: "")
+            if compact != k { candidates.append(compact) }
+        }
+        for k in candidates {
             if let list = epgMap[k], !list.isEmpty {
                 return list
             }
@@ -383,10 +389,31 @@ final class AppStore: ObservableObject {
     }
 
     private func seedBuiltInLegalTestDataIfNeeded() {
-        let seededKey = "pb.didSeedDemoV1"
+        let seededKey = "pb.didSeedUserSourcesV2"
         if !defaults.bool(forKey: seededKey) {
             defaults.set(true, forKey: seededKey)
-            loadDemoLegalTestStreams()
+
+            let defaultLive = SubscriptionSource(
+                name: "默认直播源 (tv.m3u)",
+                url: "https://gitee.com/ht-healthcare/look/raw/master/tv.m3u",
+                kind: .livePlaylist,
+                isEnabled: true
+            )
+            let defaultTVBox = SubscriptionSource(
+                name: "newwex 配置 (含直播/参考)",
+                url: "https://9280.kstore.vip/newwex.json",
+                kind: .tvboxConfig,
+                isEnabled: true
+            )
+
+            for src in [defaultLive, defaultTVBox] where !sources.contains(where: { $0.url == src.url }) {
+                sources.append(src)
+            }
+            persist(sources, to: "sources.json")
+
+            if channels.isEmpty {
+                loadDemoLegalTestStreams()
+            }
             syncNotice = nil
         }
     }

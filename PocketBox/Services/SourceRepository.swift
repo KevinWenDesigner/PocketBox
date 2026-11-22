@@ -20,7 +20,7 @@ final class SourceRepository {
                 headers: source.customHeaders,
                 defaultUA: defaultUA
             )
-            let parsed = PlaylistParser.parse(text, defaultGroup: source.name)
+            let parsed = PlaylistParser.parse(text, defaultGroup: source.name, defaultHeaders: source.customHeaders)
             return SourceSyncOutput(
                 channels: parsed.channels,
                 vodSites: [],
@@ -48,7 +48,7 @@ final class SourceRepository {
                         headers: reqHeaders,
                         defaultUA: defaultUA
                     )
-                    let parsed = PlaylistParser.parse(text, defaultGroup: live.name)
+                    let parsed = PlaylistParser.parse(text, defaultGroup: live.name, defaultHeaders: reqHeaders)
                     allChannels.append(contentsOf: parsed.channels)
                     if discoveredEPG == nil {
                         discoveredEPG = live.epg ?? parsed.epgURL
@@ -60,10 +60,12 @@ final class SourceRepository {
             }
 
             var parts: [String] = []
-            parts.append("\(allChannels.count) 个频道")
-            parts.append("\(config.vodSites.count) 个 CMS 点播源")
+            parts.append("\(allChannels.count) 个直播频道")
+            if !config.vodSites.isEmpty {
+                parts.append("\(config.vodSites.count) 个 CMS 点播源")
+            }
             if config.skippedSpiderCount > 0 {
-                parts.append("忽略 \(config.skippedSpiderCount) 个 Android JAR/JS 爬虫源")
+                parts.append("\(config.skippedSpiderCount) 个 Android JAR 爬虫源(iOS不支持)")
             }
 
             return SourceSyncOutput(

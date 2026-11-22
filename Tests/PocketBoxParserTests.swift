@@ -119,4 +119,45 @@ final class PocketBoxParserTests: XCTestCase {
         XCTAssertEqual(map["cctv1"]?.count, 1)
         XCTAssertEqual(map["cctv1"]?.first?.title, "朝闻天下")
     }
+
+    func testGzippedXMLTVEPGParsing() {
+        // Real RFC 1952 gzip payload with FNAME="epg.xml" containing minimal XMLTV
+        let xml = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <tv><channel id="CCTV1"><display-name>CCTV1</display-name></channel><programme channel="CCTV1" start="20261122080000 +0800" stop="20261122090000 +0800"><title>测试节目</title></programme></tv>
+        """
+        // Verify non-gzipped XML parses cleanly
+        let direct = EPGParser.parse(data: Data(xml.utf8))
+        XCTAssertEqual(direct["cctv1"]?.first?.title, "测试节目")
+
+        // Construct valid RFC 1952 gzip with FNAME flag (0x08) and stored deflate block
+        let rawBytes = Array(xml.utf8)
+        XCTAssertLessThan(rawBytes.count, 65535)
+        var gz = Data([0x1F, 0x8B, 0x08, 0x08, 0, 0, 0, 0, 0, 0xFF])
+        gz.append(contentsOf: "epg.xml\0".utf8)
+        // Stored deflate block: BFINAL=1, BTYPE=00 -> 0x01
+        let len = UInt16(rawBytes.count)
+        let nlen = ~len
+        gz.append(0x01)
+        gz.append(UInt8(len & 0xFF))
+        gz.append(UInt8(len >> 8))
+        gz.append(UInt8(nlen & 0xFF))
+        gz.append(UInt8(nlen >> 8))
+        gz.append(contentsOf: rawBytes)
+        // 8-byte trailer placeholder (GzipDecoder strips trailer before raw deflate decode)
+        gz.append(contentsOf: [0, 0, 0, 0, 0, 0, 0, 0])
+
+        let parsed = EPGParser.parse(data: gz)
+        XCTAssertEqual(parsed["cctv1"]?.first?.title, "测试节目")
+    }
+
+    func testPlaylistDefaultHeadersInheritance() {
+        let m3u = """
+        #EXTM3U
+        #EXTINF:-1,测试台
+        http://example.com/live.m3u8
+        """
+        let res = PlaylistParser.parse(m3u, defaultGroup: "默认", defaultHeaders: ["User-Agent": "bingcha/1.1"])
+        XCTAssertEqual(res.channels.first?.endpoints.first?.headers["User-Agent"], "bingcha/1.1")
+    }
 }

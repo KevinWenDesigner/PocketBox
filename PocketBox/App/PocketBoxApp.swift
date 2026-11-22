@@ -23,6 +23,9 @@ struct PocketBoxApp: App {
                     KSOptions.canBackgroundPlay = store.backgroundPlayEnabled
                     KSOptions.hardwareDecode = store.hardwareDecode
                     audioSession.configureAndActivate(audioOnlyMode: store.defaultAudioOnlyMode)
+                    if !store.sources.filter(\.isEnabled).isEmpty && store.sources.allSatisfy({ $0.lastUpdated == nil }) {
+                        Task { await store.syncAllEnabledSources() }
+                    }
                 }
         }
     }
