@@ -15,17 +15,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Select Xcode 16
+      - name: Inspect Xcode and Simulator runtimes
         run: |
-          if [ -d "/Applications/Xcode_16.1.app/Contents/Developer" ]; then
-            sudo xcode-select -s /Applications/Xcode_16.1.app/Contents/Developer
-          elif [ -d "/Applications/Xcode_16.2.app/Contents/Developer" ]; then
-            sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
-          elif [ -d "/Applications/Xcode_16.4.app/Contents/Developer" ]; then
-            sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
-          fi
           xcode-select -p
           xcodebuild -version
+          xcrun simctl list runtimes
 
       - name: Install XcodeGen and ldid
         run: |
@@ -52,22 +46,32 @@ jobs:
 
       - name: Run parser unit tests on iOS Simulator
         run: |
-          DEST=$(python3 -c "import json,subprocess; d=json.loads(subprocess.check_output(['xcrun','simctl','list','devices','available','-j'])); print(next((dev['udid'] for rt,devs in sorted(d.get('devices',{}).items(),reverse=True) if 'iOS' in rt for dev in devs if dev.get('isAvailable') and 'iPhone' in dev.get('name','')), ''))")
-          echo "Selected Simulator UDID: $DEST"
-          if [ -n "$DEST" ]; then
+          DEST_OUTPUT=$(xcodebuild -showdestinations -project PocketBox.xcodeproj -scheme PocketBox -clonedSourcePackagesDirPath SourcePackages 2>&1 || true)
+          echo "$DEST_OUTPUT"
+          DEST_ID=$(python3 -c "import re,sys; txt=sys.stdin.read().split('Ineligible destinations')[0]; ids=[re.search(r'id:([0-9A-Fa-f-]{36})', l).group(1) for l in txt.splitlines() if 'platform:iOS Simulator' in l and 'name:iPhone' in l and re.search(r'id:([0-9A-Fa-f-]{36})', l)]; print(ids[0] if ids else '')" <<< "$DEST_OUTPUT")
+          echo "Eligible Simulator ID: $DEST_ID"
+          if [ -n "$DEST_ID" ]; then
+            set -o pipefail
             xcodebuild test \
               -project PocketBox.xcodeproj \
               -scheme PocketBox \
               -sdk iphonesimulator \
-              -destination "id=$DEST" \
+              -destination "id=$DEST_ID" \
               -only-testing:PocketBoxTests \
-              -clonedSourcePackagesDirPath SourcePackages
+              -clonedSourcePackagesDirPath SourcePackages 2>&1 | tee test.log || {
+                echo '### Unit Test Failure Tail' >> "$GITHUB_STEP_SUMMARY"
+                echo '```' >> "$GITHUB_STEP_SUMMARY"
+                tail -n 60 test.log >> "$GITHUB_STEP_SUMMARY"
+                echo '```' >> "$GITHUB_STEP_SUMMARY"
+                exit 1
+              }
           else
-            echo "No available iOS Simulator found, skipping unit test run"
+            echo "No eligible iOS Simulator found for this Xcode; skipping unit tests."
           fi
 
       - name: Build and Archive Release (iphoneos, unsigned)
         run: |
+          set -o pipefail
           xcodebuild clean archive \
             -project PocketBox.xcodeproj \
             -scheme PocketBox \
@@ -77,7 +81,13 @@ jobs:
             -clonedSourcePackagesDirPath SourcePackages \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tee archive.log || {
+              echo '### Archive Failure Tail' >> "$GITHUB_STEP_SUMMARY"
+              echo '```' >> "$GITHUB_STEP_SUMMARY"
+              tail -n 80 archive.log >> "$GITHUB_STEP_SUMMARY"
+              echo '```' >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+            }
 
       - name: Package IPA (Unsigned & TrollStore ad-hoc)
         run: |
