@@ -35,6 +35,14 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
+      - name: Cache Swift Package dependencies
+        uses: actions/cache@v4
+        with:
+          path: SourcePackages
+          key: spm-ksplayer-${{ hashFiles('project.yml') }}
+          restore-keys: |
+            spm-ksplayer-
+
       - name: Resolve Swift Package dependencies
         run: |
           xcodebuild -resolvePackageDependencies \
@@ -44,8 +52,8 @@ jobs:
 
       - name: Run parser unit tests on iOS Simulator
         run: |
-          DEST=$(xcrun simctl list devices available | grep -E "iPhone (16|15|14|SE)" | head -n 1 | sed -E 's/.*\(([A-F0-9-]+)\).*/\1/')
-          echo "Using simulator: $DEST"
+          DEST=$(python3 -c "import json,subprocess; d=json.loads(subprocess.check_output(['xcrun','simctl','list','devices','available','-j'])); print(next((dev['udid'] for rt,devs in sorted(d.get('devices',{}).items(),reverse=True) if 'iOS' in rt for dev in devs if dev.get('isAvailable') and 'iPhone' in dev.get('name','')), ''))")
+          echo "Selected Simulator UDID: $DEST"
           if [ -n "$DEST" ]; then
             xcodebuild test \
               -project PocketBox.xcodeproj \
@@ -53,12 +61,9 @@ jobs:
               -sdk iphonesimulator \
               -destination "id=$DEST" \
               -only-testing:PocketBoxTests \
-              -clonedSourcePackagesDirPath SourcePackages \
-              CODE_SIGN_IDENTITY="" \
-              CODE_SIGNING_REQUIRED=NO \
-              CODE_SIGNING_ALLOWED=NO
+              -clonedSourcePackagesDirPath SourcePackages
           else
-            echo "No matching simulator found, skipping unit test run"
+            echo "No available iOS Simulator found, skipping unit test run"
           fi
 
       - name: Build and Archive Release (iphoneos, unsigned)

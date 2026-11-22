@@ -34,6 +34,9 @@ targets:
       path: PocketBox/Info.plist
     entitlements:
       path: PocketBox/PocketBox.entitlements
+    scheme:
+      testTargets:
+        - PocketBoxTests
     dependencies:
       - package: KSPlayer
         product: KSPlayer
@@ -43,15 +46,19 @@ targets:
         PRODUCT_NAME: PocketBox
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
-        CODE_SIGN_STYLE: Manual
-        CODE_SIGN_IDENTITY: ""
-        CODE_SIGNING_REQUIRED: "NO"
-        CODE_SIGNING_ALLOWED: "NO"
         ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES: "YES"
         LD_RUNPATH_SEARCH_PATHS:
           - "$(inherited)"
           - "@executable_path/Frameworks"
         SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited)"
+      configs:
+        Debug:
+          CODE_SIGN_IDENTITY: "-"
+        Release:
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: ""
+          CODE_SIGNING_REQUIRED: "NO"
+          CODE_SIGNING_ALLOWED: "NO"
 
   PocketBoxTests:
     type: bundle.unit-test
@@ -67,6 +74,4 @@ targets:
         GENERATE_INFOPLIST_FILE: "YES"
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/PocketBox.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/PocketBox"
         BUNDLE_LOADER: "$(TEST_HOST)"
-        CODE_SIGN_IDENTITY: ""
-        CODE_SIGNING_REQUIRED: "NO"
-        CODE_SIGNING_ALLOWED: "NO"
+        CODE_SIGN_IDENTITY: "-"
