@@ -1,0 +1,103 @@
+name: Build PocketBox IPA (iOS 15+)
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Select Xcode 16
+        run: |
+          if [ -d "/Applications/Xcode_16.1.app/Contents/Developer" ]; then
+            sudo xcode-select -s /Applications/Xcode_16.1.app/Contents/Developer
+          elif [ -d "/Applications/Xcode_16.2.app/Contents/Developer" ]; then
+            sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
+          elif [ -d "/Applications/Xcode_16.4.app/Contents/Developer" ]; then
+            sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
+          fi
+          xcode-select -p
+          xcodebuild -version
+
+      - name: Install XcodeGen and ldid
+        run: |
+          brew install xcodegen
+          brew install ldid || true
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Resolve Swift Package dependencies
+        run: |
+          xcodebuild -resolvePackageDependencies \
+            -project PocketBox.xcodeproj \
+            -scheme PocketBox \
+            -clonedSourcePackagesDirPath SourcePackages
+
+      - name: Run parser unit tests on iOS Simulator
+        run: |
+          DEST=$(xcrun simctl list devices available | grep -E "iPhone (16|15|14|SE)" | head -n 1 | sed -E 's/.*\(([A-F0-9-]+)\).*/\1/')
+          echo "Using simulator: $DEST"
+          if [ -n "$DEST" ]; then
+            xcodebuild test \
+              -project PocketBox.xcodeproj \
+              -scheme PocketBox \
+              -sdk iphonesimulator \
+              -destination "id=$DEST" \
+              -only-testing:PocketBoxTests \
+              -clonedSourcePackagesDirPath SourcePackages \
+              CODE_SIGN_IDENTITY="" \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGNING_ALLOWED=NO
+          else
+            echo "No matching simulator found, skipping unit test run"
+          fi
+
+      - name: Build and Archive Release (iphoneos, unsigned)
+        run: |
+          xcodebuild clean archive \
+            -project PocketBox.xcodeproj \
+            -scheme PocketBox \
+            -configuration Release \
+            -sdk iphoneos \
+            -archivePath build/PocketBox.xcarchive \
+            -clonedSourcePackagesDirPath SourcePackages \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Package IPA (Unsigned & TrollStore ad-hoc)
+        run: |
+          mkdir -p build/unsigned/Payload
+          ditto build/PocketBox.xcarchive/Products/Applications/PocketBox.app build/unsigned/Payload/PocketBox.app
+          (cd build/unsigned && zip -r -y ../PocketBox-unsigned.ipa Payload)
+
+          mkdir -p build/trollstore/Payload
+          ditto build/PocketBox.xcarchive/Products/Applications/PocketBox.app build/trollstore/Payload/PocketBox.app
+          if command -v ldid >/dev/null 2>&1; then
+            find build/trollstore/Payload/PocketBox.app -name "*.framework" -o -name "*.dylib" | while read -r fw; do
+              ldid -S "$fw" || true
+            done
+            ldid -SPocketBox/PocketBox.entitlements build/trollstore/Payload/PocketBox.app
+          else
+            codesign --force --deep --sign - --entitlements PocketBox/PocketBox.entitlements build/trollstore/Payload/PocketBox.app || true
+          fi
+          (cd build/trollstore && zip -r -y ../PocketBox-TrollStore.ipa Payload)
+          ls -lh build/*.ipa
+
+      - name: Upload IPA Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: PocketBox-iOS15-IPAs
+          path: |
+            build/PocketBox-unsigned.ipa
+            build/PocketBox-TrollStore.ipa
+          retention-days: 30
